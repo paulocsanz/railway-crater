@@ -1,0 +1,6 @@
+mutation templateDeploy($services: [TemplateDeployService!]!, $templateCode: String!) {
+  templateDeploy(input: { services: $services, templateCode: $templateCode }) {
+    projectId
+    workflowId
+  }
+}

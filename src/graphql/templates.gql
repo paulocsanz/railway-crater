@@ -1,0 +1,13 @@
+query templates {
+  templates {
+    edges {
+      cursor
+      node {
+        id
+        code
+        health
+        serializedConfig
+      }
+    }
+  }
+}
