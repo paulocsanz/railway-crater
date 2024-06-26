@@ -7,9 +7,9 @@ pub use error::{Error, Result};
 use crate::railway::{Railway, template::{Template, NewService, NewVolume}};
 use crate::environment::{DeserializedEnvironment, DeserializedServiceSource};
 
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Duration};
 use serde::Deserialize;
-use tracing::{error, info, warn};
+use tracing::{error, info, warn, debug};
 use tokio::task::JoinSet;
 
 pub async fn run(token: String) -> Result<()> {
@@ -75,6 +75,7 @@ async fn run_each(token: String, chunk: Vec<Template>) -> Run {
             Ok(config) => config,
             Err(err) => {
                 run.errors.push(Box::new(err));
+                debug!("Discarded Template: {}", template.code());
                 continue;
             }
         };
@@ -89,6 +90,7 @@ async fn run_each(token: String, chunk: Vec<Template>) -> Run {
                 } else if !variable.is_optional().unwrap_or_default() {
                     // Can't crater run templates with env vars to fill out
                     // warn!("Required empty var {name}");
+                    debug!("Discarded Template: {}", template.code());
                     continue 'outer;
                 }
             }
@@ -120,6 +122,7 @@ async fn run_each(token: String, chunk: Vec<Template>) -> Run {
                         Ok(p) => p,
                         Err(err) => {
                             run.errors.push(Box::new(err));
+                            debug!("Discarded Template: {}", template.code());
                             continue 'outer;
                         }
                     },
@@ -133,19 +136,20 @@ async fn run_each(token: String, chunk: Vec<Template>) -> Run {
             });
         }
 
-        info!("Deploying: {}", template.code());
-        let deployed = match Template::deploy(&token, services).await {
+        let deployed = match Template::deploy(&token, services, template.code()).await {
             Ok(deployed) => deployed,
             Err(err) => {
+                error!("Discarded Template {} because of error: {err}", template.code());
                 run.errors.push(Box::new(err));
+                tokio::time::sleep(Duration::from_secs(30)).await;
                 continue;
             }
         };
-        dbg!(&deployed);
-        std::process::abort();
+        let project_id = deployed.project_id;
 
         run.valid += 1;
-        // info!("Processed template: {}", template.code());
+        tokio::time::sleep(Duration::from_secs(30)).await;
+        info!("Processed template: {}", template.code());
     }
     run
 }

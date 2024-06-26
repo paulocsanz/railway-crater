@@ -1,6 +1,6 @@
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
-use tracing::debug;
+use tracing::{info, trace};
 
 pub mod template;
 
@@ -25,7 +25,7 @@ impl Railway {
         token: &str,
         json: serde_json::Value,
     ) -> Result<T> {
-        // debug!("Executing query: {json:#?}");
+        trace!("Executing query: {json:#?}");
 
         let url = "https://backboard.railway.app/graphql/v2";
         let response = reqwest::Client::new()
@@ -54,7 +54,7 @@ impl Railway {
             .map_err(|err| Error::RailwayBody(err, url, json))?;
         let response = RailwayResponse::<T>::deserialize(&json)
             .map_err(|err| Error::JsonWithMetadata(err, json))?;
-        // debug!("Output: {response:#?}");
+        trace!("Output: {response:#?}");
 
         if !response.errors.is_empty() {
             Err(Error::Railway(

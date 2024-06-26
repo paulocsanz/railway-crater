@@ -12,6 +12,7 @@ pub struct NewVolume {
 }
 
 #[derive(Getters, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct NewService {
     pub id: String,
     #[copy]
@@ -102,6 +103,7 @@ impl Template {
     pub async fn deploy(
         token: &str,
         services: Vec<NewService>,
+        template_code: &str
     ) -> Result<DeployedTemplate> {
         let response: DeployedTemplateResponse = Railway::query(
             token,
@@ -109,6 +111,7 @@ impl Template {
                 "query": TEMPLATE_DEPLOY,
                 "variables": {
                     "services": serde_json::to_value(services)?,
+                    "templateCode": template_code,
                 }
             }),
         )
