@@ -32,7 +32,8 @@ async fn main() -> color_eyre::Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    let token = std::env::var("RAILWAY_API_TOKEN").map_err(|_| Error::MissingEnvVar("RAILWAY_API_TOKEN"))?;
+    let token = std::env::var("RAILWAY_API_TOKEN")
+        .map_err(|_| Error::MissingEnvVar("RAILWAY_API_TOKEN"))?;
     crater::run(token).await?;
 
     Ok(())

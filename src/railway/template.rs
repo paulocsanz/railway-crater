@@ -1,7 +1,7 @@
 use crate::{Railway, Result};
+use derive_get::Getters;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use derive_get::Getters;
 
 const TEMPLATES: &str = include_str!("../graphql/templates.gql");
 const TEMPLATE_DEPLOY: &str = include_str!("../graphql/template_deploy.gql");
@@ -39,18 +39,15 @@ pub struct Template {
     serialized_config: serde_json::Value,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Getters, Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct DeployedTemplate {
     project_id: String,
     workflow_id: Option<String>,
 }
 
-
 impl Template {
-    pub async fn list(
-        token: &str,
-    ) -> Result<Vec<Template>> {
+    pub async fn list(token: &str) -> Result<Vec<Template>> {
         let response: TemplatesResponse = Railway::query(
             token,
             serde_json::json!({
@@ -103,7 +100,7 @@ impl Template {
     pub async fn deploy(
         token: &str,
         services: Vec<NewService>,
-        template_code: &str
+        template_code: &str,
     ) -> Result<DeployedTemplate> {
         let response: DeployedTemplateResponse = Railway::query(
             token,

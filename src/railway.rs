@@ -2,7 +2,9 @@ use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
 use tracing::{info, trace};
 
+pub mod project;
 pub mod template;
+pub mod workflow;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct RailwayError {
