@@ -104,13 +104,13 @@ impl Template {
     ) -> Result<DeployedTemplate> {
         let response: DeployedTemplateResponse = Railway::query(
             token,
-            dbg!(serde_json::json!({
+            serde_json::json!({
                 "query": TEMPLATE_DEPLOY,
                 "variables": {
                     "services": serde_json::to_value(services)?,
                     "templateCode": template_code,
                 }
-            })),
+            }),
         )
         .await?;
 

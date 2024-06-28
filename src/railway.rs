@@ -4,8 +4,8 @@ use tracing::trace;
 
 pub mod deployment;
 pub mod project;
-pub mod template;
 pub mod service;
+pub mod template;
 pub mod workflow;
 
 #[derive(Serialize, Deserialize, Debug)]

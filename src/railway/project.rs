@@ -8,13 +8,13 @@ pub struct Project;
 impl Project {
     pub async fn delete(token: &str, project_id: &str) -> Result<()> {
         let response: ProjectDeleteResponse = Railway::query(
-            dbg!(token),
-            dbg!(serde_json::json!({
+            token,
+            serde_json::json!({
                 "query": DELETE,
                 "variables": {
                     "id": project_id,
                 }
-            })),
+            }),
         )
         .await?;
 

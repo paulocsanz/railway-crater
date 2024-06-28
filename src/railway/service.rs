@@ -1,7 +1,7 @@
+use crate::{Error, Railway, Result};
 use derive_get::Getters;
-use crate::{Railway, Result, Error};
-use std::time::Duration;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 const LIST: &str = include_str!("../graphql/service_list.gql");
 
@@ -18,7 +18,7 @@ pub struct ServiceInstance {
 pub struct Service {
     id: String,
     name: String,
-    instances: Vec<ServiceInstance>
+    instances: Vec<ServiceInstance>,
 }
 
 impl Service {
@@ -35,7 +35,12 @@ impl Service {
 
                 for instance in service.instances() {
                     let status = instance.status().as_deref();
-                    if status == Some("BUILDING") || status == Some("WAITING") || status == Some("INITIALIZING") || status == Some("QUEUED") {
+                    if status.is_none()
+                        || status == Some("BUILDING")
+                        || status == Some("WAITING")
+                        || status == Some("INITIALIZING")
+                        || status == Some("QUEUED")
+                    {
                         continue 'outer;
                     }
                 }
@@ -70,19 +75,20 @@ impl Service {
         struct ServiceListProjectServiceEdgeNodeServiceInstancesEdgeNode {
             healthcheck_path: Option<String>,
             healthcheck_timeout: Option<u64>,
-            latest_deployment: Option<ServiceListProjectServiceEdgeNodeServiceInstancesEdgeNodeLatestDeployment>
+            latest_deployment:
+                Option<ServiceListProjectServiceEdgeNodeServiceInstancesEdgeNodeLatestDeployment>,
         }
 
         #[derive(Serialize, Deserialize, Debug)]
         #[serde(rename_all = "camelCase")]
         struct ServiceListProjectServiceEdgeNodeServiceInstancesEdge {
-            node: ServiceListProjectServiceEdgeNodeServiceInstancesEdgeNode
+            node: ServiceListProjectServiceEdgeNodeServiceInstancesEdgeNode,
         }
 
         #[derive(Serialize, Deserialize, Debug)]
         #[serde(rename_all = "camelCase")]
         struct ServiceListProjectServiceEdgeNodeServiceInstances {
-            edges: Vec<ServiceListProjectServiceEdgeNodeServiceInstancesEdge>
+            edges: Vec<ServiceListProjectServiceEdgeNodeServiceInstancesEdge>,
         }
 
         #[derive(Serialize, Deserialize, Debug)]
@@ -90,31 +96,31 @@ impl Service {
         struct ServiceListProjectServiceEdgeNode {
             id: String,
             name: String,
-            service_instances: ServiceListProjectServiceEdgeNodeServiceInstances
+            service_instances: ServiceListProjectServiceEdgeNodeServiceInstances,
         }
 
         #[derive(Serialize, Deserialize, Debug)]
         #[serde(rename_all = "camelCase")]
         struct ServiceListProjectServiceEdge {
-            node: ServiceListProjectServiceEdgeNode
+            node: ServiceListProjectServiceEdgeNode,
         }
 
         #[derive(Serialize, Deserialize, Debug)]
         #[serde(rename_all = "camelCase")]
         struct ServiceListProjectServices {
-            edges: Vec<ServiceListProjectServiceEdge>
+            edges: Vec<ServiceListProjectServiceEdge>,
         }
 
         #[derive(Serialize, Deserialize, Debug)]
         #[serde(rename_all = "camelCase")]
         struct ServiceListProject {
-            services: ServiceListProjectServices
+            services: ServiceListProjectServices,
         }
 
         #[derive(Serialize, Deserialize, Debug)]
         #[serde(rename_all = "camelCase")]
         struct ServiceList {
-            project: ServiceListProject
+            project: ServiceListProject,
         }
 
         let mut views = Vec::new();
@@ -122,15 +128,25 @@ impl Service {
             views.push(Service {
                 id: service.node.id,
                 name: service.node.name,
-                instances: service.node.service_instances.edges.into_iter().map(|i| {
-                    Ok::<_, Error>(ServiceInstance {
-                        healthcheck_path: i.node.healthcheck_path,
-                        healthcheck_timeout: i.node.healthcheck_timeout,
-                        static_url: i.node.latest_deployment.as_ref().and_then(|d| d.static_url.clone()),
-                        status: i.node.latest_deployment.as_ref().map(|d| d.status.clone()),
-                        deployment_id: i.node.latest_deployment.as_ref().map(|d| d.id.clone()),
+                instances: service
+                    .node
+                    .service_instances
+                    .edges
+                    .into_iter()
+                    .map(|i| {
+                        Ok::<_, Error>(ServiceInstance {
+                            healthcheck_path: i.node.healthcheck_path,
+                            healthcheck_timeout: i.node.healthcheck_timeout,
+                            static_url: i
+                                .node
+                                .latest_deployment
+                                .as_ref()
+                                .and_then(|d| d.static_url.clone()),
+                            status: i.node.latest_deployment.as_ref().map(|d| d.status.clone()),
+                            deployment_id: i.node.latest_deployment.as_ref().map(|d| d.id.clone()),
+                        })
                     })
-                }).collect::<Result<Vec<_>>>()?
+                    .collect::<Result<Vec<_>>>()?,
             });
         }
         Ok(views)

@@ -6,23 +6,29 @@ pub use error::{Error, Result};
 
 use crate::environment::{DeserializedEnvironment, DeserializedServiceSource};
 pub(crate) use crate::railway::{
+    deployment::{Deployment, DeploymentLog},
     project::Project,
+    service::Service,
     template::{NewService, NewVolume, Template},
     workflow::{Workflow, WorkflowStatus},
-    service::Service,
-    deployment::{Deployment, DeploymentLog},
     Railway,
 };
 
-use serde::Deserialize;
-use std::{collections::HashMap, time::Duration, path::PathBuf};
-use tokio::task::JoinSet;
 use chrono::Utc;
+use rand::{prelude::*, thread_rng};
+use serde::Deserialize;
+use std::{collections::HashMap, path::PathBuf, time::Duration};
+use tokio::task::JoinSet;
 use tracing::{error, info, warn};
-use rand::{thread_rng, prelude::*};
 
 pub async fn run(token: String) -> Result<()> {
-    let mut templates = Template::list(&token).await?;
+    let mut templates: Vec<_> = Template::list(&token)
+        .await?
+        .into_iter()
+        .filter(|t| {
+            vec!["postgres", "qHvw-4", "redis", "OpUzwe", "strapi"].contains(&t.code().as_str())
+        })
+        .collect();
     templates.shuffle(&mut thread_rng());
     info!("Templates: {}", templates.len());
 
@@ -40,9 +46,9 @@ pub async fn run(token: String) -> Result<()> {
 
     let mut tasks = JoinSet::new();
     tasks.spawn(run_each(dir.clone(), token.clone(), first_chunk));
-    // tasks.spawn(run_each(dir.clone(), token.clone(), second_chunk));
-    // tasks.spawn(run_each(dir.clone(), token.clone(), third_chunk));
-    // tasks.spawn(run_each(dir.clone(), token.clone(), fourth_chunk));
+    tasks.spawn(run_each(dir.clone(), token.clone(), second_chunk));
+    tasks.spawn(run_each(dir.clone(), token.clone(), third_chunk));
+    tasks.spawn(run_each(dir.clone(), token.clone(), fourth_chunk));
 
     let mut results = Vec::new();
 
@@ -114,6 +120,8 @@ async fn run_each(dir: PathBuf, token: String, chunk: Vec<Template>) -> Run {
         for (id, service) in config.as_ref().map_or(&HashMap::new(), |c| c.services()) {
             let mut variables = HashMap::new();
             for (name, variable) in service.variables() {
+                variables.insert("RAILWAY_BETA_ENABLE_BUILD_V2".to_owned(), "1".to_owned());
+
                 if let Some(value) = variable.default_value().clone().filter(|v| !v.is_empty()) {
                     variables.insert(name.clone(), value);
                 } else if !variable.is_optional().unwrap_or_default() {
@@ -246,7 +254,10 @@ async fn run_each(dir: PathBuf, token: String, chunk: Vec<Template>) -> Run {
 
         info!("Waiting for all builds: {}", template.code());
         if let Err(err) = Service::wait_for_all_builds(&token, deployed.project_id()).await {
-            error!("Unable to wait for all builds for {}: {err}", template.code());
+            error!(
+                "Unable to wait for all builds for {}: {err}",
+                template.code()
+            );
             run.errors.push(Box::new(err));
 
             if let Err(err) = Project::delete(&token, deployed.project_id()).await {
@@ -302,7 +313,6 @@ async fn run_each(dir: PathBuf, token: String, chunk: Vec<Template>) -> Run {
                             continue;
                         }
                     };
-                    dbg!(&build_logs);
 
                     let json = match serde_json::to_string(&build_logs) {
                         Ok(json) => json,
@@ -318,7 +328,12 @@ async fn run_each(dir: PathBuf, token: String, chunk: Vec<Template>) -> Run {
                         }
                     };
 
-                    if let Err(err) = tokio::fs::write(dir.join(format!("{}-{}.json", service.id(), deployment_id)), &json).await {
+                    if let Err(err) = tokio::fs::write(
+                        dir.join(format!("{}-{}.json", template.code(), service.name())),
+                        &json,
+                    )
+                    .await
+                    {
                         error!("Unable to serialize build logs: {err}");
                         run.errors.push(Box::new(err));
 
