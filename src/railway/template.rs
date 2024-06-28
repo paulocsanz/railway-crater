@@ -7,6 +7,7 @@ const TEMPLATES: &str = include_str!("../graphql/templates.gql");
 const TEMPLATE_DEPLOY: &str = include_str!("../graphql/template_deploy.gql");
 
 #[derive(Getters, Serialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct NewVolume {
     pub mount_path: String,
 }
@@ -48,7 +49,7 @@ pub struct DeployedTemplate {
 
 impl Template {
     pub async fn list(token: &str) -> Result<Vec<Template>> {
-        let response: TemplatesResponse = Railway::query(
+        let response: Templates = Railway::query(
             token,
             serde_json::json!({
                 "query": TEMPLATES,
@@ -58,7 +59,7 @@ impl Template {
 
         #[derive(Serialize, Deserialize, Debug)]
         #[serde(rename_all = "camelCase")]
-        pub struct TemplatesPageEdgeNodeResponse {
+        pub struct TemplatesEdgesEdgeNode {
             id: String,
             code: String,
             health: Option<f64>,
@@ -67,21 +68,20 @@ impl Template {
 
         #[derive(Serialize, Deserialize, Debug)]
         #[serde(rename_all = "camelCase")]
-        pub struct TemplatesPageEdgeResponse {
-            cursor: serde_json::Value,
-            node: TemplatesPageEdgeNodeResponse,
+        pub struct TemplatesEdgesEdge {
+            node: TemplatesEdgesEdgeNode,
         }
 
         #[derive(Serialize, Deserialize, Debug)]
         #[serde(rename_all = "camelCase")]
-        pub struct TemplatesEdgesResponse {
-            edges: Vec<TemplatesPageEdgeResponse>,
+        pub struct TemplatesEdges {
+            edges: Vec<TemplatesEdgesEdge>,
         }
 
         #[derive(Serialize, Deserialize, Debug)]
         #[serde(rename_all = "camelCase")]
-        pub struct TemplatesResponse {
-            templates: TemplatesEdgesResponse,
+        pub struct Templates {
+            templates: TemplatesEdges,
         }
 
         let mut templates = Vec::with_capacity(response.templates.edges.len());
@@ -104,13 +104,13 @@ impl Template {
     ) -> Result<DeployedTemplate> {
         let response: DeployedTemplateResponse = Railway::query(
             token,
-            serde_json::json!({
+            dbg!(serde_json::json!({
                 "query": TEMPLATE_DEPLOY,
                 "variables": {
                     "services": serde_json::to_value(services)?,
                     "templateCode": template_code,
                 }
-            }),
+            })),
         )
         .await?;
 

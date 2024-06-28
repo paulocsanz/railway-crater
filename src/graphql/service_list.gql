@@ -3,6 +3,7 @@ query project($id: String!) {
     services {
       edges {
         node {
+          id
           name
           serviceInstances {
             edges {

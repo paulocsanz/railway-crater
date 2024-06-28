@@ -86,17 +86,24 @@ async fn run_each(dir: PathBuf, token: String, chunk: Vec<Template>) -> Run {
     let mut interval = tokio::time::interval(Duration::from_secs(1));
 
     'outer: for template in chunk {
+        interval.tick().await;
+
         run.total += 1;
+
+        if template.serialized_config().is_null() {
+            warn!("No serialized config for {}, skipping it", template.code());
+            continue;
+        }
 
         let config =
             match Option::<DeserializedEnvironment>::deserialize(template.serialized_config()) {
                 Ok(config) => config,
                 Err(err) => {
-                    run.errors.push(Box::new(err));
                     error!(
-                        "Unable to deserialize services for template {}",
+                        "Unable to deserialize services for template {}: {err}",
                         template.code()
                     );
+                    run.errors.push(Box::new(err));
                     continue;
                 }
             };
@@ -164,11 +171,11 @@ async fn run_each(dir: PathBuf, token: String, chunk: Vec<Template>) -> Run {
                 {
                     Ok(p) => p,
                     Err(err) => {
-                        run.errors.push(Box::new(err));
                         error!(
-                            "Invalid tcp procy application port for template {}",
+                            "Invalid tcp procy application port for template {}: {err}",
                             template.code()
                         );
+                        run.errors.push(Box::new(err));
                         continue 'outer;
                     }
                 },
@@ -182,15 +189,16 @@ async fn run_each(dir: PathBuf, token: String, chunk: Vec<Template>) -> Run {
             });
         }
 
+        info!("Deploying {}", template.code());
         let deployed = match Template::deploy(&token, services, template.code()).await {
             Ok(deployed) => deployed,
             Err(err) => {
                 error!("Unable to deploy template {}: {err}", template.code());
                 run.errors.push(Box::new(err));
-                interval.tick().await;
                 continue;
             }
         };
+        info!("Checking workflow for {}", template.code());
 
         let status = if let Some(id) = deployed.workflow_id() {
             match Workflow::status(&token, id).await {
@@ -204,14 +212,12 @@ async fn run_each(dir: PathBuf, token: String, chunk: Vec<Template>) -> Run {
 
                     if let Err(err) = Project::delete(&token, deployed.project_id()).await {
                         error!(
-                            "Unable to delete project {} for template {}",
+                            "Unable to delete project {} for template {}: {err}",
                             deployed.project_id(),
                             template.code()
                         );
                         run.errors.push(Box::new(err));
                     }
-
-                    interval.tick().await;
                     continue;
                 }
             }
@@ -219,29 +225,38 @@ async fn run_each(dir: PathBuf, token: String, chunk: Vec<Template>) -> Run {
             error!("No workflow id for {}", template.code());
 
             if let Err(err) = Project::delete(&token, deployed.project_id()).await {
-                error!("Unable to delete project: {}", deployed.project_id());
+                error!("Unable to delete project {}: {err}", deployed.project_id());
                 run.errors.push(Box::new(err));
             }
-
-            interval.tick().await;
             continue;
         };
 
-        if let WorkflowStatus::Error(err) = dbg!(status) {
+        if let WorkflowStatus::Error(err) = status {
             error!("Unable to process {}: {err}", template.code());
             run.errors.push(Box::new(Error::Workflow(err)));
 
             if let Err(err) = Project::delete(&token, deployed.project_id()).await {
-                error!("Unable to delete project: {}", deployed.project_id());
+                error!("Unable to delete project {}: {err}", deployed.project_id());
                 run.errors.push(Box::new(err));
             }
-
-            interval.tick().await;
             continue;
         }
 
         run.valid += 1;
 
+        info!("Waiting for all builds: {}", template.code());
+        if let Err(err) = Service::wait_for_all_builds(&token, deployed.project_id()).await {
+            error!("Unable to wait for all builds for {}: {err}", template.code());
+            run.errors.push(Box::new(err));
+
+            if let Err(err) = Project::delete(&token, deployed.project_id()).await {
+                error!("Unable to delete project {}: {err}", deployed.project_id());
+                run.errors.push(Box::new(err));
+            }
+            continue;
+        }
+
+        /*
         if dbg!(any_healthcheck) {
             // TODO: check healthcheck
             /*
@@ -255,80 +270,77 @@ async fn run_each(dir: PathBuf, token: String, chunk: Vec<Template>) -> Run {
         } else {
             tokio::time::sleep(Duration::from_secs(60)).await;
         }
+        */
 
-        let services = match dbg!(Service::list(&token, dbg!(deployed.project_id())).await) {
+        info!("Listing services");
+        let services = match Service::list(&token, deployed.project_id()).await {
             Ok(services) => services,
             Err(err) => {
                 run.errors.push(Box::new(err));
+
                 if let Err(err) = Project::delete(&token, deployed.project_id()).await {
-                    error!("Unable to delete project: {}", deployed.project_id());
+                    error!("Unable to delete project {}: {err}", deployed.project_id());
                     run.errors.push(Box::new(err));
                 }
-
-                interval.tick().await;
                 continue;
             }
         };
 
         for service in &services {
             for instance in service.instances() {
-                let build_logs = match Deployment::build_logs(&token, instance.deployment_id()).await {
-                    Ok(logs) => logs,
-                    Err(err) => {
+                if let Some(deployment_id) = instance.deployment_id() {
+                    let build_logs = match Deployment::build_logs(&token, deployment_id).await {
+                        Ok(logs) => logs,
+                        Err(err) => {
+                            error!("Unable to fetch build logs: {err}");
+                            run.errors.push(Box::new(err));
+
+                            if let Err(err) = Project::delete(&token, deployed.project_id()).await {
+                                error!("Unable to delete project {}: {err}", deployed.project_id());
+                                run.errors.push(Box::new(err));
+                            }
+                            continue;
+                        }
+                    };
+                    dbg!(&build_logs);
+
+                    let json = match serde_json::to_string(&build_logs) {
+                        Ok(json) => json,
+                        Err(err) => {
+                            error!("Unable to serialize build logs: {err}");
+                            run.errors.push(Box::new(err));
+
+                            if let Err(err) = Project::delete(&token, deployed.project_id()).await {
+                                error!("Unable to delete project {}: {err}", deployed.project_id());
+                                run.errors.push(Box::new(err));
+                            }
+                            continue;
+                        }
+                    };
+
+                    if let Err(err) = tokio::fs::write(dir.join(format!("{}-{}.json", service.id(), deployment_id)), &json).await {
+                        error!("Unable to serialize build logs: {err}");
                         run.errors.push(Box::new(err));
+
                         if let Err(err) = Project::delete(&token, deployed.project_id()).await {
-                            error!("Unable to delete project: {}", deployed.project_id());
+                            error!("Unable to delete project {}: {err}", deployed.project_id());
                             run.errors.push(Box::new(err));
                         }
-
-                        interval.tick().await;
                         continue;
                     }
-                };
 
-                let json = match serde_json::to_string(&build_logs) {
-                    Ok(json) => json,
-                    Err(err) => {
-                        error!("Unable to serialize build logs");
-                        run.errors.push(Box::new(err));
-
-                        if let Err(err) = Project::delete(&token, deployed.project_id()).await {
-                            error!("Unable to delete project: {}", deployed.project_id());
-                            run.errors.push(Box::new(err));
-                        }
-
-                        interval.tick().await;
-                        continue;
-                    }
-                };
-
-                if let Err(err) = tokio::fs::write(dir.join(format!("{}-{}.json", service.id(), instance.deployment_id())), &json).await {
-                    error!("Unable to serialize build logs");
-                    run.errors.push(Box::new(err));
-
-                    if let Err(err) = Project::delete(&token, deployed.project_id()).await {
-                        error!("Unable to delete project: {}", deployed.project_id());
-                        run.errors.push(Box::new(err));
-                    }
-
-                    interval.tick().await;
-                    continue;
+                    // TODO: collect deployment logs
                 }
-
-                // TODO: collect deployment logs
             }
         }
 
         if let Err(err) = Project::delete(&token, deployed.project_id()).await {
-            error!("Unable to delete project: {}", deployed.project_id());
+            error!("Unable to delete project {}: {err}", deployed.project_id());
             run.errors.push(Box::new(err));
-
-            interval.tick().await;
             continue;
         }
 
         info!("Processed template: {}", template.code());
-        interval.tick().await;
     }
 
     run

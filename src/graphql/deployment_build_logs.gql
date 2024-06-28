@@ -1,6 +1,5 @@
 query buildLogs($deploymentId: String!) {
-  buildLogs(deploymentId: $deploymentId)
-    attributes
+  buildLogs(deploymentId: $deploymentId) {
     message
     severity
     timestamp

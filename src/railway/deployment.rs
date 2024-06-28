@@ -8,7 +8,6 @@ const BUILD_LOGS: &str = include_str!("../graphql/deployment_build_logs.gql");
 #[derive(Getters, Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct DeploymentLog {
-    attributes: HashMap<String, String>,
     message: String,
     severity: Option<String>,
     timestamp: String,
@@ -32,27 +31,10 @@ impl Deployment {
 
         #[derive(Serialize, Deserialize, Debug)]
         #[serde(rename_all = "camelCase")]
-        struct DeploymentLogsAttributeResponse {
-            key: String,
-            value: String,
-        }
-
-        #[derive(Serialize, Deserialize, Debug)]
-        #[serde(rename_all = "camelCase")]
-        struct DeploymentLogsResponse {
-            attributes: Vec<DeploymentLogsAttributeResponse>,
-            message: String,
-            severity: Option<String>,
-            timestamp: String,
-        }
-
-        #[derive(Serialize, Deserialize, Debug)]
-        #[serde(rename_all = "camelCase")]
         struct DeploymentLogResponse {
-            deployment_logs: Vec<DeploymentLogsResponse>,
+            build_logs: Vec<DeploymentLog>,
         }
-        dbg!(&response);
 
-        Ok(todo!())
+        Ok(response.build_logs)
     }
 }
