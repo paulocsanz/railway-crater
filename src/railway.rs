@@ -1,9 +1,11 @@
 use crate::{Error, Result};
 use serde::{Deserialize, Serialize};
-use tracing::{info, trace};
+use tracing::trace;
 
+pub mod deployment;
 pub mod project;
 pub mod template;
+pub mod service;
 pub mod workflow;
 
 #[derive(Serialize, Deserialize, Debug)]

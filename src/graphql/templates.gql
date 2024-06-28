@@ -1,5 +1,5 @@
 query templates {
-  templates {
+  templates(recommended: true) {
     edges {
       cursor
       node {

@@ -1,7 +1,5 @@
 use crate::{Error, Railway, Result};
-use derive_get::Getters;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 const DELETE: &str = include_str!("../graphql/project_delete.gql");
 

@@ -1,0 +1,8 @@
+query buildLogs($deploymentId: String!) {
+  buildLogs(deploymentId: $deploymentId)
+    attributes
+    message
+    severity
+    timestamp
+  }
+}

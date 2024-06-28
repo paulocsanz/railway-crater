@@ -1,7 +1,7 @@
 use crate::{Railway, Result};
 use derive_get::Getters;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, time::Duration};
+use std::time::Duration;
 use tracing::error;
 
 const STATUS: &str = include_str!("../graphql/workflow_status.gql");

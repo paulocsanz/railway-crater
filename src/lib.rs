@@ -5,20 +5,25 @@ mod railway;
 pub use error::{Error, Result};
 
 use crate::environment::{DeserializedEnvironment, DeserializedServiceSource};
-use crate::railway::{
+pub(crate) use crate::railway::{
     project::Project,
     template::{NewService, NewVolume, Template},
     workflow::{Workflow, WorkflowStatus},
+    service::Service,
+    deployment::{Deployment, DeploymentLog},
     Railway,
 };
 
 use serde::Deserialize;
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, time::Duration, path::PathBuf};
 use tokio::task::JoinSet;
-use tracing::{debug, error, info, warn};
+use chrono::Utc;
+use tracing::{error, info, warn};
+use rand::{thread_rng, prelude::*};
 
 pub async fn run(token: String) -> Result<()> {
-    let templates = Template::list(&token).await?;
+    let mut templates = Template::list(&token).await?;
+    templates.shuffle(&mut thread_rng());
     info!("Templates: {}", templates.len());
 
     let (first_chunk, third_chunk) = templates.split_at(templates.len() / 2);
@@ -30,11 +35,14 @@ pub async fn run(token: String) -> Result<()> {
     let third_chunk = third_chunk.to_vec();
     let fourth_chunk = fourth_chunk.to_vec();
 
+    let dir = PathBuf::from(format!("./output/crater-run-{}", Utc::now()));
+    tokio::fs::create_dir_all(&dir).await?;
+
     let mut tasks = JoinSet::new();
-    tasks.spawn(run_each(token.clone(), first_chunk));
-    // tasks.spawn(run_each(token.clone(), second_chunk));
-    // tasks.spawn(run_each(token.clone(), third_chunk));
-    // tasks.spawn(run_each(token.clone(), fourth_chunk));
+    tasks.spawn(run_each(dir.clone(), token.clone(), first_chunk));
+    // tasks.spawn(run_each(dir.clone(), token.clone(), second_chunk));
+    // tasks.spawn(run_each(dir.clone(), token.clone(), third_chunk));
+    // tasks.spawn(run_each(dir.clone(), token.clone(), fourth_chunk));
 
     let mut results = Vec::new();
 
@@ -67,7 +75,7 @@ struct Run {
     errors: Vec<Box<dyn std::error::Error + Sync + Send>>,
 }
 
-async fn run_each(token: String, chunk: Vec<Template>) -> Run {
+async fn run_each(dir: PathBuf, token: String, chunk: Vec<Template>) -> Run {
     let mut run = Run {
         total: 0,
         healthy: 0,
@@ -219,8 +227,9 @@ async fn run_each(token: String, chunk: Vec<Template>) -> Run {
             continue;
         };
 
-        if let WorkflowStatus::Error(err) = status {
+        if let WorkflowStatus::Error(err) = dbg!(status) {
             error!("Unable to process {}: {err}", template.code());
+            run.errors.push(Box::new(Error::Workflow(err)));
 
             if let Err(err) = Project::delete(&token, deployed.project_id()).await {
                 error!("Unable to delete project: {}", deployed.project_id());
@@ -233,12 +242,80 @@ async fn run_each(token: String, chunk: Vec<Template>) -> Run {
 
         run.valid += 1;
 
-        if any_healthcheck {
+        if dbg!(any_healthcheck) {
             // TODO: check healthcheck
+            /*
             let healthcheck = todo!();
             if healthcheck {
                 let full_path = format!("full_path/{healthcheck}");
                 reqwest::get(healthcheck)
+            }
+            */
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        } else {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        }
+
+        let services = match dbg!(Service::list(&token, dbg!(deployed.project_id())).await) {
+            Ok(services) => services,
+            Err(err) => {
+                run.errors.push(Box::new(err));
+                if let Err(err) = Project::delete(&token, deployed.project_id()).await {
+                    error!("Unable to delete project: {}", deployed.project_id());
+                    run.errors.push(Box::new(err));
+                }
+
+                interval.tick().await;
+                continue;
+            }
+        };
+
+        for service in &services {
+            for instance in service.instances() {
+                let build_logs = match Deployment::build_logs(&token, instance.deployment_id()).await {
+                    Ok(logs) => logs,
+                    Err(err) => {
+                        run.errors.push(Box::new(err));
+                        if let Err(err) = Project::delete(&token, deployed.project_id()).await {
+                            error!("Unable to delete project: {}", deployed.project_id());
+                            run.errors.push(Box::new(err));
+                        }
+
+                        interval.tick().await;
+                        continue;
+                    }
+                };
+
+                let json = match serde_json::to_string(&build_logs) {
+                    Ok(json) => json,
+                    Err(err) => {
+                        error!("Unable to serialize build logs");
+                        run.errors.push(Box::new(err));
+
+                        if let Err(err) = Project::delete(&token, deployed.project_id()).await {
+                            error!("Unable to delete project: {}", deployed.project_id());
+                            run.errors.push(Box::new(err));
+                        }
+
+                        interval.tick().await;
+                        continue;
+                    }
+                };
+
+                if let Err(err) = tokio::fs::write(dir.join(format!("{}-{}.json", service.id(), instance.deployment_id())), &json).await {
+                    error!("Unable to serialize build logs");
+                    run.errors.push(Box::new(err));
+
+                    if let Err(err) = Project::delete(&token, deployed.project_id()).await {
+                        error!("Unable to delete project: {}", deployed.project_id());
+                        run.errors.push(Box::new(err));
+                    }
+
+                    interval.tick().await;
+                    continue;
+                }
+
+                // TODO: collect deployment logs
             }
         }
 

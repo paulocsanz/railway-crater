@@ -38,3 +38,5 @@ sha2 = "0.10"
 hmac = "0.12"
 
 color-eyre = "0.6"
+
+rand = "0.7"

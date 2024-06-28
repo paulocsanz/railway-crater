@@ -18,6 +18,8 @@ pub enum Error {
     #[error("invalid time delta: secs = {0}, nano = {1}")]
     InvalidTimeDelta(i64, i64),
     #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
     Json(#[from] serde_json::Error),
     #[error("json error: {0} with payload {1:#?}")]
     JsonWithMetadata(serde_json::Error, serde_json::Value),
@@ -43,4 +45,6 @@ pub enum Error {
     WebHookFailure(reqwest::Error, String),
     #[error("webhook request failed with status {0}: {1}")]
     WebHookStatusFailure(u16, String),
+    #[error("{0}")]
+    Workflow(String),
 }
